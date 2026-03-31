@@ -979,6 +979,7 @@ export default function GameDownloadDialog({ game, open, onOpenChange }: GameDow
                                                   "transmission",
                                                   "rtorrent",
                                                   "qbittorrent",
+                                                  "deluge",
                                                 ].includes(d.type)
                                           );
 

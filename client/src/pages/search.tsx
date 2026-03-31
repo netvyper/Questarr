@@ -247,7 +247,7 @@ export default function SearchPage() {
     ? downloaders.filter((d) =>
         isUsenetItem(selectedDownload)
           ? ["sabnzbd", "nzbget"].includes(d.type)
-          : ["transmission", "rtorrent", "qbittorrent"].includes(d.type)
+          : ["transmission", "rtorrent", "qbittorrent", "deluge"].includes(d.type)
       )
     : downloaders;
 
