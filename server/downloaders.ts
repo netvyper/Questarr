@@ -4397,13 +4397,33 @@ export class DelugeClient implements DownloaderClient {
       }
 
       let result;
-      if (request.magnetUrl) {
-        result = await this.rpcCall("core.add_torrent_magnet", [request.magnetUrl, options]);
-      } else if (request.fileBuffer) {
-        const fileContent = request.fileBuffer.toString("base64");
-        result = await this.rpcCall("core.add_torrent_file", ["torrent.torrent", fileContent, options]);
+      const isMagnet = request.url.startsWith("magnet:");
+
+      if (isMagnet) {
+        result = await this.rpcCall("core.add_torrent_magnet", [request.url, options]);
       } else {
-        return { success: false, message: "No download URL or file provided" };
+        try {
+          if (!(await isSafeUrl(request.url))) {
+            return { success: false, message: `Unsafe URL blocked: ${request.url}` };
+          }
+          const response = await safeFetch(request.url, {
+            headers: {
+              "User-Agent": DOWNLOAD_CLIENT_USER_AGENT,
+            },
+          });
+
+          if (!response.ok) {
+            throw new Error(`Failed to download torrent file: HTTP ${response.status}`);
+          }
+
+          const arrayBuffer = await response.arrayBuffer();
+          const fileContent = Buffer.from(arrayBuffer).toString("base64");
+
+          result = await this.rpcCall("core.add_torrent_file", ["torrent.torrent", fileContent, options]);
+        } catch (downloadError: any) {
+          downloadersLogger.error({ error: downloadError.message, url: request.url }, "Failed to fetch torrent file for Deluge");
+          return { success: false, message: `Failed to fetch torrent file: ${downloadError.message}` };
+        }
       }
 
       if (!result) {
@@ -4431,18 +4451,21 @@ export class DelugeClient implements DownloaderClient {
 
       if (!result || Object.keys(result).length === 0) return null;
 
-      let status: "downloading" | "completed" | "wanted" = "downloading";
-      if (result.state === "Seeding" || result.state === "Paused" && result.progress === 100) {
+      let status: "downloading" | "completed" | "wanted" | "paused" = "downloading";
+      if (result.state === "Seeding" || (result.state === "Paused" && result.progress === 100)) {
         status = "completed";
+      } else if (result.state === "Paused") {
+        status = "paused";
       }
 
       return {
         id,
+        name: result.name || "Unknown Download",
         status,
         progress: result.progress || 0,
         downloadSpeed: result.download_payload_rate || 0,
         eta: result.eta || 0,
-        totalSize: result.total_size || 0,
+        size: result.total_size || 0,
       };
     } catch (error) {
       return null;
@@ -4456,9 +4479,11 @@ export class DelugeClient implements DownloaderClient {
 
       if (!result || Object.keys(result).length === 0) return null;
 
-      let status: "downloading" | "completed" | "wanted" = "downloading";
-      if (result.state === "Seeding" || result.state === "Paused" && result.progress === 100) {
+      let status: "downloading" | "completed" | "wanted" | "paused" = "downloading";
+      if (result.state === "Seeding" || (result.state === "Paused" && result.progress === 100)) {
         status = "completed";
+      } else if (result.state === "Paused") {
+        status = "paused";
       }
 
       return {
@@ -4468,11 +4493,11 @@ export class DelugeClient implements DownloaderClient {
         progress: result.progress || 0,
         downloadSpeed: result.download_payload_rate || 0,
         eta: result.eta || 0,
-        totalSize: result.total_size || 0,
+        size: result.total_size || 0,
         downloaded: result.total_done || 0,
-        uploaded: result.total_uploaded || 0,
         ratio: result.ratio || 0,
         files: [],
+        trackers: [],
       };
     } catch (error) {
       return null;
@@ -4481,24 +4506,27 @@ export class DelugeClient implements DownloaderClient {
 
   async getAllDownloads(): Promise<DownloadStatus[]> {
     try {
-      const keys = ["state", "progress", "download_payload_rate", "eta", "total_size"];
+      const keys = ["state", "progress", "download_payload_rate", "eta", "total_size", "name"];
       const result = await this.rpcCall("core.get_torrents_status", [{}, keys]);
 
       if (!result) return [];
 
       return Object.entries(result).map(([id, data]: [string, any]) => {
-        let status: "downloading" | "completed" | "wanted" = "downloading";
-        if (data.state === "Seeding" || data.state === "Paused" && data.progress === 100) {
+        let status: "downloading" | "completed" | "wanted" | "paused" = "downloading";
+        if (data.state === "Seeding" || (data.state === "Paused" && data.progress === 100)) {
           status = "completed";
+        } else if (data.state === "Paused") {
+          status = "paused";
         }
 
         return {
           id,
+          name: data.name || "Unknown Download",
           status,
           progress: data.progress || 0,
           downloadSpeed: data.download_payload_rate || 0,
           eta: data.eta || 0,
-          totalSize: data.total_size || 0,
+          size: data.total_size || 0,
         };
       });
     } catch (error) {
