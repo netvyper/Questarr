@@ -42,6 +42,7 @@ const downloaderTypes = [
   { value: "transmission", label: "Transmission", protocol: "torrent" },
   { value: "rtorrent", label: "rTorrent", protocol: "torrent" },
   { value: "qbittorrent", label: "qBittorrent", protocol: "torrent" },
+  { value: "deluge", label: "Deluge", protocol: "torrent" },
   { value: "sabnzbd", label: "SABnzbd", protocol: "usenet" },
   { value: "nzbget", label: "NZBGet", protocol: "usenet" },
 ] as const;
